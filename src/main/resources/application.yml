@@ -2,7 +2,7 @@ server:
   port: 8080
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/orders
+    url: jdbc:postgresql://host.docker.internal/orders
     username: postgres
     password: simple123
     driver-class-name: org.postgresql.Driver

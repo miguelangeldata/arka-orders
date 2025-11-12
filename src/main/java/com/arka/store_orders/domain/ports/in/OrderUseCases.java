@@ -1,10 +1,10 @@
 package com.arka.store_orders.domain.ports.in;
 
+import com.arka.store_orders.domain.models.ComprehensiveOrderMetrics;
 import com.arka.store_orders.domain.models.Order;
 import com.arka.store_orders.domain.models.OrderItem;
 import com.arka.store_orders.infrastructure.resources.Request.ItemQuantityUpdate;
 import com.arka.store_orders.infrastructure.resources.Request.OrderRequest;
-import com.arka.store_orders.infrastructure.resources.Request.ShippingRequest;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,4 +21,6 @@ public interface OrderUseCases {
 
     Optional<Order> getOrderById(UUID id);
     List<Order> getOrders();
+    ComprehensiveOrderMetrics getComprehensiveMetrics();
+
 }

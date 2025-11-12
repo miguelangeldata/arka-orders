@@ -1,4 +1,4 @@
-package com.arka.store_orders.infrastructure.exceptions;
+package com.arka.store_orders.infrastructure.controllerAdvice.exceptions;
 
 public class ItemUpdateFailedException extends RuntimeException {
     public ItemUpdateFailedException(String message) {

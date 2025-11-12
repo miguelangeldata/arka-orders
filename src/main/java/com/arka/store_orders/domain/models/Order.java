@@ -1,6 +1,6 @@
 package com.arka.store_orders.domain.models;
 
-import com.arka.store_orders.infrastructure.exceptions.InvalidOrderStateException;
+import com.arka.store_orders.infrastructure.controllerAdvice.exceptions.InvalidOrderStateException;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;

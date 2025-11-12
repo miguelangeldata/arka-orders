@@ -1,6 +1,8 @@
 server:
   port: 8080
 spring:
+  application:
+    name: orders-service
   datasource:
     url: jdbc:postgresql://host.docker.internal/orders
     username: postgres
@@ -23,4 +25,26 @@ resilience4j:
         retryExceptions:
           - feign.FeignException
         ignoreExceptions:
-          - com.arka.store_orders.infrastructure.exceptions.PaymentFailedException
+          - com.arka.store_orders.infrastructure.controllerAdvice.exceptions.PaymentFailedException
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  group-configs:
+    - group: orders
+      paths-to-match: /orders/**
+      packages-to-scan: com.arka.store_orders
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    hostname: localhost
+    instance-id: ${spring.application.name}:${server.port}

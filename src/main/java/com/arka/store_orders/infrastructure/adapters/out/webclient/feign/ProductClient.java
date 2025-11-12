@@ -5,7 +5,7 @@ import com.arka.store_orders.infrastructure.resources.Response.ReservationRespon
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
-@FeignClient(name = "products-service",url = "http://localhost:8081/products")
+@FeignClient(name = "PRODUCTS-SERVICE",path = "/products")
 public interface ProductClient {
 
     @PostMapping("/reserve/{productId}")

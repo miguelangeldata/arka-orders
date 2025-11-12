@@ -1,16 +1,14 @@
 package com.arka.store_orders.application.services;
 
 import com.arka.store_orders.application.factory.OrderFactory;
-import com.arka.store_orders.domain.models.Order;
-import com.arka.store_orders.domain.models.OrderItem;
-import com.arka.store_orders.domain.models.OrderStatus;
+import com.arka.store_orders.domain.models.*;
 import com.arka.store_orders.domain.ports.in.OrderUseCases;
 import com.arka.store_orders.domain.ports.out.feignclient.PaymentPort;
 import com.arka.store_orders.domain.ports.out.feignclient.ProductPort;
 import com.arka.store_orders.domain.ports.out.feignclient.ShippingPort;
 import com.arka.store_orders.domain.ports.out.persistence.OrderPersistencePort;
 
-import com.arka.store_orders.infrastructure.exceptions.*;
+import com.arka.store_orders.infrastructure.controllerAdvice.exceptions.*;
 import com.arka.store_orders.infrastructure.mapper.OrderItemMapper;
 import com.arka.store_orders.infrastructure.resources.Request.ItemQuantityUpdate;
 import com.arka.store_orders.infrastructure.resources.Request.OrderRequest;
@@ -25,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -57,7 +56,7 @@ public class OrderService implements OrderUseCases {
             newOrder.calculateTotal();
             log.info("Order created and stock reserved for orderId: {}"+newOrder.getId());
             return persistence.save(newOrder);
-        } catch (Exception e) {
+        } catch (InsufficientStockException e) {
             rollbackStockReservations(items);
             log.warning("Failed to create order due to: {}"+e.getMessage()+ e);
             throw new OrderCreationFailedException("Failed to create order: " + e.getMessage(), e);
@@ -74,12 +73,12 @@ public class OrderService implements OrderUseCases {
 
             String transactionId = paymentProcess(orderId, processingOrder.getTotal());
             processingOrder.setTransactionId(transactionId);
-            processingOrder.switchToWaitingConfirmation();
 
         } catch (PaymentFailedException e) {
             processingOrder.switchToWaitingPaymentInitiation();
             processingOrder.setTransactionId(null);
         }
+        processingOrder.switchToWaitingConfirmation();
         return persistence.save(processingOrder);
 
     }
@@ -173,7 +172,8 @@ public class OrderService implements OrderUseCases {
 
     @Override
     public Optional<Order> getOrderById(UUID id) {
-        return persistence.findByIdWithItems(id);
+        return Optional.ofNullable(persistence.findByIdWithItems(id)
+                .orElseThrow(() -> new OrderNotFoundException(" Order not Found By Id : "+id)));
     }
 
     @Override
@@ -181,6 +181,9 @@ public class OrderService implements OrderUseCases {
 
         return persistence.findAll();
     }
+
+
+
     @Retry(name = "productReserveRetry", fallbackMethod = "handleReserveFailure")
     private void reserveStockWithRetry(OrderItem item) {
         validateAndReserveStock(item);
@@ -255,6 +258,91 @@ public class OrderService implements OrderUseCases {
     private String handlePaymentServiceFailure(UUID orderId, Double total, FeignException e) {
         log.severe("Payment retries exhausted for order " + orderId + ". Error: " + e.getMessage());
         throw new PaymentFailedException("Max retries exceeded contacting payment service", e);
+    }
+    public ComprehensiveOrderMetrics getComprehensiveMetrics() {
+        List<Order> allOrders = getOrders();
+
+        Long totalOrders = totalOrders(allOrders);
+        Long acceptedOrders = totalAcceptedOrders(allOrders);
+        Long pendingOrders = totalPendingOrders(allOrders);
+        Double totalSalesAmount = totalSalesAmount(allOrders);
+        Double averageOrderValue = calculateAverageOrderValue(totalSalesAmount, acceptedOrders);
+
+        BestSellerMetrics bestsellers = calculateBestsellerMetrics(allOrders);
+        return new ComprehensiveOrderMetrics(
+                totalOrders,
+                acceptedOrders,
+                pendingOrders,
+                totalSalesAmount,
+                averageOrderValue,
+                bestsellers
+        );
+    }
+
+    private BestSellerMetrics calculateBestsellerMetrics(List<Order> allOrders) {
+        Map<Long, Long> productCounts = getProductSalesCounts(allOrders);
+
+        if (productCounts.isEmpty()) {
+            return new BestSellerMetrics(null, null, 0L, 0L);
+        }
+        Map.Entry<Long, Long> mostSold = findMostSold(productCounts);
+        Map.Entry<Long, Long> leastSold = findLeastSold(productCounts);
+
+        return new BestSellerMetrics(
+                mostSold.getKey(),
+                leastSold.getKey(),
+                mostSold.getValue(),
+                leastSold.getValue()
+        );
+    }
+
+    private Long totalOrders(List<Order> allOrders) {
+        return (long) allOrders.size();
+    }
+
+    private Long totalAcceptedOrders(List<Order> allOrders) {
+        return allOrders.stream()
+                .filter(order -> order.getStatus().equals(OrderStatus.ACCEPTED))
+                .count();
+    }
+
+    private Long totalPendingOrders(List<Order> allOrders) {
+        return allOrders.stream()
+                .filter(order -> order.getStatus().equals(OrderStatus.PENDING))
+                .count();
+    }
+
+    private Double totalSalesAmount(List<Order> allOrders) {
+        return allOrders.stream()
+
+                .filter(order -> order.getStatus().equals(OrderStatus.ACCEPTED))
+                .mapToDouble(Order::getTotal)
+                .sum();
+    }
+
+    private Double calculateAverageOrderValue(Double totalSalesAmount, Long acceptedOrders) {
+        return (acceptedOrders != null && acceptedOrders > 0) ?
+                (totalSalesAmount / acceptedOrders) : 0.0;
+    }
+
+
+    private Map<Long, Long> getProductSalesCounts(List<Order> allOrders) {
+        return allOrders.stream()
+                .flatMap(order -> order.getItems().stream())
+                .collect(Collectors.groupingBy(
+                        OrderItem::getProductId,
+                        Collectors.summingLong(OrderItem::getQuantity)
+                ));
+    }
+    private Map.Entry<Long, Long> findMostSold(Map<Long, Long> productCounts) {
+        return productCounts.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .get();
+    }
+    private Map.Entry<Long, Long> findLeastSold(Map<Long, Long> productCounts) {
+        return productCounts.entrySet().stream()
+                .min(Map.Entry.comparingByValue())
+                .get();
     }
 
 }
